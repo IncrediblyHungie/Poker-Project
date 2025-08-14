@@ -5,6 +5,7 @@ Runs self-play training to create a baseline strategy.
 
 import yaml
 import random
+import os
 from typing import Dict, List
 from tqdm import tqdm
 from engine.game_state import GameState, BettingRound
@@ -150,6 +151,32 @@ class BlueprintGenerator:
                           f"InfoSets={len(self.cfr_solver.infosets)}, "
                           f"AvgUtility={avg_utility:.2f}, "
                           f"{mem_usage}")
+                    
+                    # Additional quality metrics
+                    if iteration > 0:
+                        # Strategy stability (Nash distance from previous checkpoint)
+                        if iteration >= 20000:  # Have previous checkpoint to compare
+                            prev_checkpoint = f"data/blueprints/checkpoint_{iteration-10000}.pkl"
+                            if os.path.exists(prev_checkpoint):
+                                try:
+                                    from evaluation.metrics import PokerMetrics
+                                    from cfr.linear_cfr import LinearCFR
+                                    
+                                    # Load previous strategy
+                                    prev_cfr = LinearCFR(self.card_abstraction, self.action_abstraction)
+                                    prev_cfr.load_strategy(prev_checkpoint)
+                                    
+                                    # Compute Nash distance
+                                    nash_dist = PokerMetrics.nash_distance(self.cfr_solver, prev_cfr)
+                                    print(f"         Nash distance from prev: {nash_dist:.6f}")
+                                    
+                                    # Store in stats
+                                    if 'nash_distance' not in stats:
+                                        stats['nash_distance'] = []
+                                    stats['nash_distance'].append(nash_dist)
+                                    
+                                except Exception as e:
+                                    print(f"         Could not compute Nash distance: {e}")
                     
                     # Synchronize GPU operations for accurate timing
                     if self.device_config.use_gpu:
