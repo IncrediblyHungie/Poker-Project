@@ -16,10 +16,11 @@ sys.path.insert(0, str(src_dir))
 
 from strategy.blueprint_generator import BlueprintGenerator
 from abstraction.card_abstraction import CardAbstraction
+from abstraction.fast_card_abstraction import FastCardAbstraction
 import yaml
 
 
-def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 0):
+def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 0, use_fast: bool = True):
     """Train card abstractions"""
     print("=" * 50)
     print("Training Card Abstractions")
@@ -31,7 +32,13 @@ def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 
     # Initialize card abstraction with GPU support
     from utils.device_config import setup_device
     device_config = setup_device(force_cpu=not use_gpu, device_id=device_id)
-    card_abstraction = CardAbstraction(config['abstraction'], device_config=device_config)
+    
+    if use_fast:
+        print("Using fast card abstraction for quick training...")
+        card_abstraction = FastCardAbstraction(config['abstraction'], device_config=device_config)
+    else:
+        print("Using full card abstraction (slower but more accurate)...")
+        card_abstraction = CardAbstraction(config['abstraction'], device_config=device_config)
     
     # Train abstractions
     card_abstraction.train_abstractions()
@@ -103,6 +110,8 @@ def main():
                        help="Batch size for GPU training (auto-detected by default)")
     parser.add_argument("--disable-batching", action="store_true",
                        help="Disable batch processing (use single iterations)")
+    parser.add_argument("--slow-abstractions", action="store_true",
+                       help="Use full card abstractions (slower but more accurate)")
     
     args = parser.parse_args()
     
@@ -119,7 +128,7 @@ def main():
     
     # Train card abstractions
     if not args.skip_abstractions:
-        train_abstractions(args.config, use_gpu=use_gpu, device_id=device_id)
+        train_abstractions(args.config, use_gpu=use_gpu, device_id=device_id, use_fast=not args.slow_abstractions)
     
     # Train blueprint strategy
     if not args.abstractions_only:
