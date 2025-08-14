@@ -10,8 +10,8 @@ from sklearn.cluster import KMeans
 from scipy.stats import wasserstein_distance
 import pickle
 import os
-from ..engine.hand_evaluator import HandEvaluator, Card, Rank, Suit
-from ..engine.game_state import BettingRound
+from engine.hand_evaluator import HandEvaluator, Card, Rank, Suit
+from engine.game_state import BettingRound
 
 
 class CardAbstraction:

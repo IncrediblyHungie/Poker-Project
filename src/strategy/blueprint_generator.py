@@ -7,11 +7,11 @@ import yaml
 import random
 from typing import Dict, List
 from tqdm import tqdm
-from ..engine.game_state import GameState, BettingRound
-from ..engine.hand_evaluator import Card, Rank, Suit, create_card
-from ..abstraction.card_abstraction import CardAbstraction
-from ..abstraction.action_abstraction import ActionAbstraction
-from ..cfr.linear_cfr import LinearCFR
+from engine.game_state import GameState, BettingRound
+from engine.hand_evaluator import Card, Rank, Suit, create_card
+from abstraction.card_abstraction import CardAbstraction
+from abstraction.action_abstraction import ActionAbstraction
+from cfr.linear_cfr import LinearCFR
 
 
 class BlueprintGenerator:

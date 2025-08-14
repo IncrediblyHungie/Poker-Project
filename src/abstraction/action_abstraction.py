@@ -4,8 +4,8 @@ Maps continuous bet sizes to discrete abstract actions based on pot fractions.
 """
 
 from typing import List, Tuple, Dict
-from ..engine.game_state import GameState, Action
-from ..engine.action_handler import ActionHandler
+from engine.game_state import GameState, Action
+from engine.action_handler import ActionHandler
 
 
 class ActionAbstraction:

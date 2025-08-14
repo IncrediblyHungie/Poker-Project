@@ -7,9 +7,9 @@ import numpy as np
 import random
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
-from ..engine.game_state import GameState, Action, BettingRound
-from ..abstraction.card_abstraction import CardAbstraction
-from ..abstraction.action_abstraction import ActionAbstraction
+from engine.game_state import GameState, Action, BettingRound
+from abstraction.card_abstraction import CardAbstraction
+from abstraction.action_abstraction import ActionAbstraction
 
 
 class InfoSet:
