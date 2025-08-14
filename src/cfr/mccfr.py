@@ -142,10 +142,15 @@ class MCCFR:
         return utilities
     
     def _mccfr_traverse(self, game_state: GameState, reach_probs: List[float], 
-                       traversing_player: int) -> Dict[int, float]:
+                       traversing_player: int, depth: int = 0) -> Dict[int, float]:
         """
         Recursive MCCFR traversal of game tree.
         """
+        # Prevent infinite recursion
+        if depth > 100:  # Maximum depth limit
+            # Return neutral utilities to avoid infinite loops
+            return {i: 0.0 for i in range(game_state.num_players)}
+        
         # Terminal node
         if game_state.is_terminal():
             payoffs = game_state.get_payoffs()
@@ -160,7 +165,7 @@ class MCCFR:
         
         if not abstract_actions:
             # No legal actions, advance game state
-            return self._mccfr_traverse(game_state, reach_probs, traversing_player)
+            return self._mccfr_traverse(game_state, reach_probs, traversing_player, depth + 1)
         
         num_actions = len(abstract_actions)
         
@@ -194,7 +199,7 @@ class MCCFR:
                 new_reach_probs[current_player] *= strategy[action_idx]
             
             # Recursive call
-            child_utilities = self._mccfr_traverse(new_state, new_reach_probs, traversing_player)
+            child_utilities = self._mccfr_traverse(new_state, new_reach_probs, traversing_player, depth + 1)
             
             # Store action utility for traversing player
             if current_player == traversing_player:
