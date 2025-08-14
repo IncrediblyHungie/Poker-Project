@@ -112,43 +112,79 @@ def main():
                        help="Disable batch processing (use single iterations)")
     parser.add_argument("--slow-abstractions", action="store_true",
                        help="Use full card abstractions (slower but more accurate)")
+    parser.add_argument("--test", action="store_true",
+                       help="Run a quick test (50 iterations) to verify everything works")
     
     args = parser.parse_args()
+    
+    # Test mode - quick verification
+    if args.test:
+        args.iterations = 50
+        args.skip_abstractions = True
+        args.disable_batching = True
+        print("🧪 TEST MODE: Running quick 50-iteration test")
     
     # Create output directories
     os.makedirs("data/blueprints", exist_ok=True)
     os.makedirs("data", exist_ok=True)
     
-    print("Pluribus Poker Bot Training")
-    print("=" * 50)
+    print("🚀 Pluribus Poker Bot Training")
+    print("=" * 60)
+    
+    # System information
+    import time
+    start_time = time.time()
     
     # GPU/CPU configuration
     use_gpu = not args.cpu
     device_id = args.device_id
     
-    # Train card abstractions
-    if not args.skip_abstractions:
-        train_abstractions(args.config, use_gpu=use_gpu, device_id=device_id, use_fast=not args.slow_abstractions)
+    print(f"🖥️  Device: {'GPU' if use_gpu else 'CPU'} (ID: {device_id})")
+    print(f"🔄 Batch processing: {'Disabled' if args.disable_batching else 'Enabled'}")
+    print(f"📦 Iterations: {args.iterations or 'Config default'}")
+    print("=" * 60)
     
-    # Train blueprint strategy
-    if not args.abstractions_only:
-        stats, evaluation = train_blueprint(
-            args.config, 
-            args.iterations,
-            load_abstractions=not args.skip_abstractions,
-            use_gpu=use_gpu,
-            device_id=device_id,
-            batch_size=args.batch_size,
-            disable_batching=args.disable_batching
-        )
+    try:
+        # Train card abstractions
+        if not args.skip_abstractions:
+            train_abstractions(args.config, use_gpu=use_gpu, device_id=device_id, use_fast=not args.slow_abstractions)
         
-        print("\nTraining Summary:")
-        print(f"Final exploitability: {stats['exploitability'][-1]:.6f}")
-        print(f"Total information sets: {stats['total_infosets'][-1]}")
-        print(f"Average utility: {evaluation['average_utility']:.2f}")
-        print(f"Hands evaluated: {evaluation['hands_played']}")
-    
-    print("\nTraining complete!")
+        # Train blueprint strategy
+        if not args.abstractions_only:
+            stats, evaluation = train_blueprint(
+                args.config, 
+                args.iterations,
+                load_abstractions=not args.skip_abstractions,
+                use_gpu=use_gpu,
+                device_id=device_id,
+                batch_size=args.batch_size,
+                disable_batching=args.disable_batching
+            )
+        
+            elapsed = time.time() - start_time
+            print("\n🎉 Training Summary:")
+            print("=" * 40)
+            if stats and 'exploitability' in stats and stats['exploitability']:
+                print(f"📊 Final exploitability: {stats['exploitability'][-1]:.6f}")
+                print(f"🧠 Total information sets: {stats['total_infosets'][-1]}")
+            else:
+                print("✅ Training completed successfully (using SimpleCFR)")
+                print(f"🧠 Total information sets: {len(blueprint_gen.cfr_solver.infosets)}")
+            print(f"💰 Average utility: {evaluation['average_utility']:.2f}")
+            print(f"🃏 Hands evaluated: {evaluation['hands_played']}")
+            print(f"⏱️  Total time: {elapsed:.1f}s")
+            if args.iterations:
+                print(f"🚀 Performance: {args.iterations/elapsed:.1f} iter/s")
+        
+        print("\n✅ Training complete!")
+        
+    except KeyboardInterrupt:
+        print("\n⏹️  Training interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Training failed: {e}")
+        print("💡 Try using --cpu or --test flag for debugging")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
