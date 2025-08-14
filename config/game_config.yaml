@@ -1,0 +1,19 @@
+game:
+  min_players: 2
+  max_players: 10
+  starting_stack: 10000
+  small_blind: 50
+  big_blind: 100
+
+abstraction:
+  card_buckets:
+    preflop: 169
+    flop: 5000
+    turn: 2000
+    river: 1000
+  action_fractions: [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.5, 2.0]
+
+training:
+  iterations: 1000000
+  checkpoint_frequency: 10000
+  num_threads: 8
