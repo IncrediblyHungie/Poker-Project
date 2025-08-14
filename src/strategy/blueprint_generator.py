@@ -26,19 +26,26 @@ class BlueprintGenerator:
         # Setup device configuration
         self.device_config = setup_device(force_cpu=not use_gpu, device_id=device_id)
         
-        # Determine batch size based on GPU memory
+        # Determine batch size based on GPU memory and CPU cores
         if batch_size is None:
             if self.device_config.use_gpu:
                 _, total_mem = self.device_config.get_memory_info()
-                # Use larger batches for more GPU memory
-                if total_mem > 30e9:  # >30GB
+                import multiprocessing
+                cpu_cores = multiprocessing.cpu_count()
+                
+                # Scale batch size based on both GPU memory and CPU cores
+                if total_mem > 80e9 and cpu_cores >= 32:  # GH200-class with many CPUs
+                    batch_size = 8192  # Massive batches for supercomputing setups
+                elif total_mem > 30e9 and cpu_cores >= 16:  # A100-class with many CPUs
+                    batch_size = 4096
+                elif total_mem > 30e9:  # High-end GPU
+                    batch_size = 1024
+                elif total_mem > 10e9:  # Mid-range GPU
                     batch_size = 512
-                elif total_mem > 10e9:  # >10GB
-                    batch_size = 256
                 else:
-                    batch_size = 128
+                    batch_size = 256
             else:
-                batch_size = 64  # Smaller for CPU
+                batch_size = 128  # CPU only
         
         self.use_batch_processing = use_batch_processing and self.device_config.use_gpu
         self.batch_size = batch_size

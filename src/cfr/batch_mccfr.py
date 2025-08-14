@@ -84,7 +84,10 @@ class BatchMCCFR(MCCFR):
         super().__init__(card_abstraction, action_abstraction, device_config)
         
         self.batch_size = batch_size
-        self.parallel_workers = 4  # Number of CPU threads for game generation
+        # Use all available CPU cores for game generation (up to 64 cores)
+        import multiprocessing
+        max_cores = multiprocessing.cpu_count()
+        self.parallel_workers = min(max_cores, 64)  # Use all cores up to 64
         
         # Pre-allocated memory pools
         self._initialize_memory_pools()
@@ -100,6 +103,7 @@ class BatchMCCFR(MCCFR):
         self.batch_regrets = self.device.zeros((self.batch_size, max_actions), dtype=np.float32)
         
         print(f"Initialized batch processing with size {self.batch_size}")
+        print(f"Using {self.parallel_workers} CPU cores for parallel game generation")
         if self.device.use_gpu:
             used, total = self.device.get_memory_info()
             print(f"GPU memory after initialization: {used / 1e9:.1f}GB / {total / 1e9:.1f}GB")
@@ -145,17 +149,23 @@ class BatchMCCFR(MCCFR):
         return dict(total_utilities)
     
     def _generate_game_states_parallel(self, num_games: int) -> List[GameState]:
-        """Generate multiple game states in parallel"""
+        """Generate multiple game states in parallel using all CPU cores"""
+        # Distribute games across all workers
         games_per_worker = max(1, num_games // self.parallel_workers)
+        remaining_games = num_games % self.parallel_workers
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.parallel_workers) as executor:
             futures = []
             
-            for _ in range(self.parallel_workers):
-                future = executor.submit(self._generate_game_states_worker, games_per_worker)
-                futures.append(future)
+            # Submit work to all CPU cores
+            for i in range(self.parallel_workers):
+                # Give extra games to first few workers if there's a remainder
+                worker_games = games_per_worker + (1 if i < remaining_games else 0)
+                if worker_games > 0:
+                    future = executor.submit(self._generate_game_states_worker, worker_games)
+                    futures.append(future)
             
-            # Collect results
+            # Collect results efficiently
             all_games = []
             for future in concurrent.futures.as_completed(futures):
                 games = future.result()
