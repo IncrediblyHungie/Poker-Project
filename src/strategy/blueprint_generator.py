@@ -12,21 +12,35 @@ from engine.hand_evaluator import Card, Rank, Suit, create_card
 from abstraction.card_abstraction import CardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
 from cfr.linear_cfr import LinearCFR
+from utils.device_config import setup_device
 
 
 class BlueprintGenerator:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, use_gpu: bool = True, device_id: int = 0):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        # Initialize abstractions
-        self.card_abstraction = CardAbstraction(self.config['abstraction'])
+        # Setup device configuration
+        self.device_config = setup_device(force_cpu=not use_gpu, device_id=device_id)
+        
+        print(f"Using {'GPU' if self.device_config.use_gpu else 'CPU'} for computation "
+              f"(backend: {self.device_config.backend})")
+        
+        # Initialize abstractions with device config
+        self.card_abstraction = CardAbstraction(
+            self.config['abstraction'], 
+            device_config=self.device_config
+        )
         self.action_abstraction = ActionAbstraction(
             self.config['abstraction']['action_fractions']
         )
         
-        # Initialize CFR solver
-        self.cfr_solver = LinearCFR(self.card_abstraction, self.action_abstraction)
+        # Initialize CFR solver with device config
+        self.cfr_solver = LinearCFR(
+            self.card_abstraction, 
+            self.action_abstraction,
+            device_config=self.device_config
+        )
         
         # Game configuration
         self.game_config = self.config['game']
@@ -124,10 +138,22 @@ class BlueprintGenerator:
                 stats['avg_utility'].append(avg_utility)
                 
                 if iteration % 10000 == 0:
+                    # Get memory info if using GPU
+                    if self.device_config.use_gpu:
+                        used_mem, total_mem = self.device_config.get_memory_info()
+                        mem_usage = f"GPU Memory: {used_mem / 1e9:.1f}GB / {total_mem / 1e9:.1f}GB"
+                    else:
+                        mem_usage = "CPU Mode"
+                    
                     print(f"Iteration {iteration}: "
                           f"Exploitability={exploitability:.6f}, "
                           f"InfoSets={len(self.cfr_solver.infosets)}, "
-                          f"AvgUtility={avg_utility:.2f}")
+                          f"AvgUtility={avg_utility:.2f}, "
+                          f"{mem_usage}")
+                    
+                    # Synchronize GPU operations for accurate timing
+                    if self.device_config.use_gpu:
+                        self.device_config.synchronize()
             
             # Save checkpoint
             if iteration % checkpoint_frequency == 0 and iteration > 0:

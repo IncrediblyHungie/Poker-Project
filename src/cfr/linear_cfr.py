@@ -12,20 +12,21 @@ from abstraction.action_abstraction import ActionAbstraction
 class LinearInfoSet(InfoSet):
     """Enhanced InfoSet with linear weighting"""
     
-    def __init__(self, key: str, num_actions: int):
-        super().__init__(key, num_actions)
+    def __init__(self, key: str, num_actions: int, device_config=None):
+        super().__init__(key, num_actions, device_config)
         self.linear_start_iteration = 10000  # Start linear weighting after this many iterations
     
     def get_strategy(self, reach_prob: float = 1.0, iteration: int = 0) -> np.ndarray:
         """Get strategy with linear weighting consideration"""
         # Use standard regret matching
-        positive_regrets = np.maximum(self.regret_sum, 0)
-        normalizing_sum = np.sum(positive_regrets)
+        positive_regrets = self.device.maximum(self.regret_sum, 0)
+        normalizing_sum = self.device.sum(positive_regrets)
+        normalizing_sum_scalar = float(self.device.to_numpy(normalizing_sum))
         
-        if normalizing_sum > 0:
+        if normalizing_sum_scalar > 0:
             strategy = positive_regrets / normalizing_sum
         else:
-            strategy = np.ones(self.num_actions) / self.num_actions
+            strategy = self.device.ones(self.num_actions, dtype=np.float32) / self.num_actions
         
         # Apply linear weighting to strategy sum
         if iteration >= self.linear_start_iteration:
@@ -36,7 +37,7 @@ class LinearInfoSet(InfoSet):
         self.strategy_sum += reach_prob * strategy * weight
         self.reach_count += weight
         
-        return strategy
+        return self.device.to_numpy(strategy)
 
 
 class LinearCFR(MCCFR):
@@ -44,14 +45,14 @@ class LinearCFR(MCCFR):
     
     def __init__(self, card_abstraction: CardAbstraction, 
                  action_abstraction: ActionAbstraction,
-                 linear_start_iteration: int = 10000):
-        super().__init__(card_abstraction, action_abstraction)
+                 linear_start_iteration: int = 10000, device_config=None):
+        super().__init__(card_abstraction, action_abstraction, device_config)
         self.linear_start_iteration = linear_start_iteration
     
     def get_infoset(self, key: str, num_actions: int) -> LinearInfoSet:
         """Get or create linear information set"""
         if key not in self.infosets:
-            infoset = LinearInfoSet(key, num_actions)
+            infoset = LinearInfoSet(key, num_actions, self.device)
             infoset.linear_start_iteration = self.linear_start_iteration
             self.infosets[key] = infoset
         

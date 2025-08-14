@@ -59,12 +59,12 @@ class SimpleBot:
         return desc, action_type, amount
 
 
-def play_bot_vs_bot(blueprint_path: str, config_path: str, num_hands: int = 100):
+def play_bot_vs_bot(blueprint_path: str, config_path: str, num_hands: int = 100, use_gpu: bool = True):
     """Play bot vs bot games"""
     print(f"Playing {num_hands} hands of bot vs bot...")
     
-    # Load blueprint
-    blueprint_gen = BlueprintGenerator(config_path)
+    # Load blueprint with GPU support
+    blueprint_gen = BlueprintGenerator(config_path, use_gpu=use_gpu)
     
     if os.path.exists("data/card_abstractions.pkl"):
         blueprint_gen.card_abstraction.load_abstractions("data/card_abstractions.pkl")
@@ -126,15 +126,15 @@ def play_bot_vs_bot(blueprint_path: str, config_path: str, num_hands: int = 100)
               f"Avg utility: {avg_utility:.2f}")
 
 
-def play_human_vs_bot(blueprint_path: str, config_path: str):
+def play_human_vs_bot(blueprint_path: str, config_path: str, use_gpu: bool = True):
     """Simple human vs bot interface"""
     print("Human vs Bot Poker")
     print("=" * 30)
     print("Actions: 'f' = fold, 'c' = check/call, 'r [amount]' = raise")
     print("Type 'quit' to exit\n")
     
-    # Load blueprint
-    blueprint_gen = BlueprintGenerator(config_path)
+    # Load blueprint with GPU support
+    blueprint_gen = BlueprintGenerator(config_path, use_gpu=use_gpu)
     
     if os.path.exists("data/card_abstractions.pkl"):
         blueprint_gen.card_abstraction.load_abstractions("data/card_abstractions.pkl")
@@ -235,6 +235,8 @@ def main():
                        help="Game mode")
     parser.add_argument("--hands", type=int, default=100,
                        help="Number of hands for bot vs bot")
+    parser.add_argument("--cpu", action="store_true",
+                       help="Force CPU-only mode (disable GPU)")
     
     args = parser.parse_args()
     
@@ -243,10 +245,12 @@ def main():
         print("Please train the bot first using scripts/train.py")
         return
     
+    use_gpu = not args.cpu
+    
     if args.mode == "bot_vs_bot":
-        play_bot_vs_bot(args.blueprint, args.config, args.hands)
+        play_bot_vs_bot(args.blueprint, args.config, args.hands, use_gpu=use_gpu)
     elif args.mode == "human_vs_bot":
-        play_human_vs_bot(args.blueprint, args.config)
+        play_human_vs_bot(args.blueprint, args.config, use_gpu=use_gpu)
 
 
 if __name__ == "__main__":

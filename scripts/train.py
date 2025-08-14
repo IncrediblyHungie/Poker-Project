@@ -19,7 +19,7 @@ from abstraction.card_abstraction import CardAbstraction
 import yaml
 
 
-def train_abstractions(config_path: str):
+def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 0):
     """Train card abstractions"""
     print("=" * 50)
     print("Training Card Abstractions")
@@ -28,8 +28,10 @@ def train_abstractions(config_path: str):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    # Initialize card abstraction
-    card_abstraction = CardAbstraction(config['abstraction'])
+    # Initialize card abstraction with GPU support
+    from utils.device_config import setup_device
+    device_config = setup_device(force_cpu=not use_gpu, device_id=device_id)
+    card_abstraction = CardAbstraction(config['abstraction'], device_config=device_config)
     
     # Train abstractions
     card_abstraction.train_abstractions()
@@ -41,14 +43,14 @@ def train_abstractions(config_path: str):
 
 
 def train_blueprint(config_path: str, iterations: int = None, 
-                   load_abstractions: bool = True):
+                   load_abstractions: bool = True, use_gpu: bool = True, device_id: int = 0):
     """Train blueprint strategy"""
     print("=" * 50)
     print("Training Blueprint Strategy")
     print("=" * 50)
     
-    # Initialize blueprint generator
-    blueprint_gen = BlueprintGenerator(config_path)
+    # Initialize blueprint generator with GPU support
+    blueprint_gen = BlueprintGenerator(config_path, use_gpu=use_gpu, device_id=device_id)
     
     # Load pre-trained abstractions if available
     if load_abstractions and os.path.exists("data/card_abstractions.pkl"):
@@ -86,6 +88,10 @@ def main():
                        help="Only train abstractions, skip blueprint")
     parser.add_argument("--resume", action="store_true",
                        help="Resume training from checkpoint")
+    parser.add_argument("--cpu", action="store_true",
+                       help="Force CPU-only training (disable GPU)")
+    parser.add_argument("--device-id", type=int, default=0,
+                       help="GPU device ID to use (default: 0)")
     
     args = parser.parse_args()
     
@@ -96,16 +102,22 @@ def main():
     print("Pluribus Poker Bot Training")
     print("=" * 50)
     
+    # GPU/CPU configuration
+    use_gpu = not args.cpu
+    device_id = args.device_id
+    
     # Train card abstractions
     if not args.skip_abstractions:
-        train_abstractions(args.config)
+        train_abstractions(args.config, use_gpu=use_gpu, device_id=device_id)
     
     # Train blueprint strategy
     if not args.abstractions_only:
         stats, evaluation = train_blueprint(
             args.config, 
             args.iterations,
-            load_abstractions=not args.skip_abstractions
+            load_abstractions=not args.skip_abstractions,
+            use_gpu=use_gpu,
+            device_id=device_id
         )
         
         print("\nTraining Summary:")

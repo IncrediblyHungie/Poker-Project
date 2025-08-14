@@ -12,12 +12,16 @@ import pickle
 import os
 from engine.hand_evaluator import HandEvaluator, Card, Rank, Suit
 from engine.game_state import BettingRound
+from utils.device_config import get_device_config
 
 
 class CardAbstraction:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, device_config=None):
         self.config = config
         self.hand_evaluator = HandEvaluator()
+        
+        # Get device configuration
+        self.device = device_config or get_device_config()
         
         # Bucket mappings for each betting round
         self.preflop_buckets = {}

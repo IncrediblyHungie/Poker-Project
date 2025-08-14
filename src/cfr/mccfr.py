@@ -10,46 +10,56 @@ from collections import defaultdict
 from engine.game_state import GameState, Action, BettingRound
 from abstraction.card_abstraction import CardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
+from utils.device_config import get_device_config
 
 
 class InfoSet:
     """Information set for CFR algorithm"""
     
-    def __init__(self, key: str, num_actions: int):
+    def __init__(self, key: str, num_actions: int, device_config=None):
         self.key = key
         self.num_actions = num_actions
         
-        # CFR data structures
-        self.regret_sum = np.zeros(num_actions)
-        self.strategy_sum = np.zeros(num_actions)
+        # Get device configuration
+        self.device = device_config or get_device_config()
+        
+        # CFR data structures on appropriate device
+        self.regret_sum = self.device.zeros(num_actions, dtype=np.float32)
+        self.strategy_sum = self.device.zeros(num_actions, dtype=np.float32)
         self.reach_count = 0
         
     def get_strategy(self, reach_prob: float = 1.0) -> np.ndarray:
         """Get current strategy using regret matching"""
         # Regret matching: strategy proportional to positive regrets
-        positive_regrets = np.maximum(self.regret_sum, 0)
-        normalizing_sum = np.sum(positive_regrets)
+        positive_regrets = self.device.maximum(self.regret_sum, 0)
+        normalizing_sum = self.device.sum(positive_regrets)
         
-        if normalizing_sum > 0:
+        # Convert to scalar for comparison
+        normalizing_sum_scalar = float(self.device.to_numpy(normalizing_sum))
+        
+        if normalizing_sum_scalar > 0:
             strategy = positive_regrets / normalizing_sum
         else:
             # Uniform random strategy if no positive regrets
-            strategy = np.ones(self.num_actions) / self.num_actions
+            strategy = self.device.ones(self.num_actions, dtype=np.float32) / self.num_actions
         
         # Update strategy sum for averaging
         self.strategy_sum += reach_prob * strategy
         self.reach_count += 1
         
-        return strategy
+        return self.device.to_numpy(strategy)
     
     def get_average_strategy(self) -> np.ndarray:
         """Get average strategy over all iterations"""
-        normalizing_sum = np.sum(self.strategy_sum)
+        normalizing_sum = self.device.sum(self.strategy_sum)
+        normalizing_sum_scalar = float(self.device.to_numpy(normalizing_sum))
         
-        if normalizing_sum > 0:
-            return self.strategy_sum / normalizing_sum
+        if normalizing_sum_scalar > 0:
+            avg_strategy = self.strategy_sum / normalizing_sum
         else:
-            return np.ones(self.num_actions) / self.num_actions
+            avg_strategy = self.device.ones(self.num_actions, dtype=np.float32) / self.num_actions
+        
+        return self.device.to_numpy(avg_strategy)
     
     def update_regret(self, action_index: int, regret: float):
         """Update regret for a specific action"""
@@ -60,9 +70,12 @@ class MCCFR:
     """Monte Carlo Counterfactual Regret Minimization solver"""
     
     def __init__(self, card_abstraction: CardAbstraction, 
-                 action_abstraction: ActionAbstraction):
+                 action_abstraction: ActionAbstraction, device_config=None):
         self.card_abstraction = card_abstraction
         self.action_abstraction = action_abstraction
+        
+        # Get device configuration
+        self.device = device_config or get_device_config()
         
         # Information sets storage
         self.infosets: Dict[str, InfoSet] = {}
@@ -74,7 +87,7 @@ class MCCFR:
     def get_infoset(self, key: str, num_actions: int) -> InfoSet:
         """Get or create information set"""
         if key not in self.infosets:
-            self.infosets[key] = InfoSet(key, num_actions)
+            self.infosets[key] = InfoSet(key, num_actions, self.device)
         
         return self.infosets[key]
     
@@ -246,8 +259,8 @@ class MCCFR:
         
         strategy_data = {
             'infosets': {key: {
-                'regret_sum': infoset.regret_sum,
-                'strategy_sum': infoset.strategy_sum,
+                'regret_sum': self.device.to_numpy(infoset.regret_sum),
+                'strategy_sum': self.device.to_numpy(infoset.strategy_sum),
                 'reach_count': infoset.reach_count,
                 'num_actions': infoset.num_actions
             } for key, infoset in self.infosets.items()},
@@ -269,9 +282,9 @@ class MCCFR:
         # Reconstruct infosets
         self.infosets = {}
         for key, data in strategy_data['infosets'].items():
-            infoset = InfoSet(key, data['num_actions'])
-            infoset.regret_sum = data['regret_sum']
-            infoset.strategy_sum = data['strategy_sum']
+            infoset = InfoSet(key, data['num_actions'], self.device)
+            infoset.regret_sum = self.device.array(data['regret_sum'], dtype=np.float32)
+            infoset.strategy_sum = self.device.array(data['strategy_sum'], dtype=np.float32)
             infoset.reach_count = data['reach_count']
             self.infosets[key] = infoset
         
