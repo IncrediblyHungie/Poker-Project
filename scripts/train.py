@@ -43,14 +43,21 @@ def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 
 
 
 def train_blueprint(config_path: str, iterations: int = None, 
-                   load_abstractions: bool = True, use_gpu: bool = True, device_id: int = 0):
+                   load_abstractions: bool = True, use_gpu: bool = True, device_id: int = 0,
+                   batch_size: int = None, disable_batching: bool = False):
     """Train blueprint strategy"""
     print("=" * 50)
     print("Training Blueprint Strategy")
     print("=" * 50)
     
     # Initialize blueprint generator with GPU support
-    blueprint_gen = BlueprintGenerator(config_path, use_gpu=use_gpu, device_id=device_id)
+    blueprint_gen = BlueprintGenerator(
+        config_path, 
+        use_gpu=use_gpu, 
+        device_id=device_id,
+        use_batch_processing=not disable_batching,
+        batch_size=batch_size
+    )
     
     # Load pre-trained abstractions if available
     if load_abstractions and os.path.exists("data/card_abstractions.pkl"):
@@ -92,6 +99,10 @@ def main():
                        help="Force CPU-only training (disable GPU)")
     parser.add_argument("--device-id", type=int, default=0,
                        help="GPU device ID to use (default: 0)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                       help="Batch size for GPU training (auto-detected by default)")
+    parser.add_argument("--disable-batching", action="store_true",
+                       help="Disable batch processing (use single iterations)")
     
     args = parser.parse_args()
     
@@ -117,7 +128,9 @@ def main():
             args.iterations,
             load_abstractions=not args.skip_abstractions,
             use_gpu=use_gpu,
-            device_id=device_id
+            device_id=device_id,
+            batch_size=args.batch_size,
+            disable_batching=args.disable_batching
         )
         
         print("\nTraining Summary:")

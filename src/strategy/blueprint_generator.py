@@ -13,19 +13,41 @@ from engine.hand_evaluator import Card, Rank, Suit, create_card
 from abstraction.card_abstraction import CardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
 from cfr.linear_cfr import LinearCFR
+from cfr.batch_mccfr import BatchMCCFR
 from utils.device_config import setup_device
 
 
 class BlueprintGenerator:
-    def __init__(self, config_path: str, use_gpu: bool = True, device_id: int = 0):
+    def __init__(self, config_path: str, use_gpu: bool = True, device_id: int = 0, 
+                 use_batch_processing: bool = True, batch_size: int = None):
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
         # Setup device configuration
         self.device_config = setup_device(force_cpu=not use_gpu, device_id=device_id)
         
+        # Determine batch size based on GPU memory
+        if batch_size is None:
+            if self.device_config.use_gpu:
+                _, total_mem = self.device_config.get_memory_info()
+                # Use larger batches for more GPU memory
+                if total_mem > 30e9:  # >30GB
+                    batch_size = 512
+                elif total_mem > 10e9:  # >10GB
+                    batch_size = 256
+                else:
+                    batch_size = 128
+            else:
+                batch_size = 64  # Smaller for CPU
+        
+        self.use_batch_processing = use_batch_processing and self.device_config.use_gpu
+        self.batch_size = batch_size
+        
         print(f"Using {'GPU' if self.device_config.use_gpu else 'CPU'} for computation "
               f"(backend: {self.device_config.backend})")
+        
+        if self.use_batch_processing:
+            print(f"Batch processing enabled with batch size: {batch_size}")
         
         # Initialize abstractions with device config
         self.card_abstraction = CardAbstraction(
@@ -37,11 +59,19 @@ class BlueprintGenerator:
         )
         
         # Initialize CFR solver with device config
-        self.cfr_solver = LinearCFR(
-            self.card_abstraction, 
-            self.action_abstraction,
-            device_config=self.device_config
-        )
+        if self.use_batch_processing:
+            self.cfr_solver = BatchMCCFR(
+                self.card_abstraction, 
+                self.action_abstraction,
+                device_config=self.device_config,
+                batch_size=batch_size
+            )
+        else:
+            self.cfr_solver = LinearCFR(
+                self.card_abstraction, 
+                self.action_abstraction,
+                device_config=self.device_config
+            )
         
         # Game configuration
         self.game_config = self.config['game']
@@ -116,77 +146,113 @@ class BlueprintGenerator:
         }
         
         # Training loop
-        for iteration in tqdm(range(iterations), desc="Training"):
-            # Sample random game situation
-            num_players = random.randint(
-                self.game_config['min_players'], 
-                self.game_config['max_players']
-            )
+        if self.use_batch_processing:
+            # Batch training for GPU acceleration
+            batch_iterations = max(1, iterations // self.batch_size)
             
-            game_state = self.setup_game(num_players)
-            
-            # Run CFR iteration
-            utilities = self.cfr_solver.train_iteration(game_state)
-            
-            # Collect statistics
-            if iteration % 1000 == 0:
-                exploitability = self.cfr_solver.get_exploitability()
-                avg_utility = sum(utilities.values()) / len(utilities)
+            for batch_idx in tqdm(range(batch_iterations), desc="Batch Training"):
+                # Run batch of iterations
+                utilities = self.cfr_solver.batch_train_iteration(self.batch_size)
                 
-                stats['iterations'].append(iteration)
-                stats['exploitability'].append(exploitability)
-                stats['total_infosets'].append(len(self.cfr_solver.infosets))
-                stats['avg_utility'].append(avg_utility)
+                # Update iteration counter
+                iteration = (batch_idx + 1) * self.batch_size
                 
-                if iteration % 10000 == 0:
-                    # Get memory info if using GPU
-                    if self.device_config.use_gpu:
-                        used_mem, total_mem = self.device_config.get_memory_info()
-                        mem_usage = f"GPU Memory: {used_mem / 1e9:.1f}GB / {total_mem / 1e9:.1f}GB"
-                    else:
-                        mem_usage = "CPU Mode"
-                    
-                    print(f"Iteration {iteration}: "
-                          f"Exploitability={exploitability:.6f}, "
-                          f"InfoSets={len(self.cfr_solver.infosets)}, "
-                          f"AvgUtility={avg_utility:.2f}, "
-                          f"{mem_usage}")
-                    
-                    # Additional quality metrics
-                    if iteration > 0:
-                        # Strategy stability (Nash distance from previous checkpoint)
-                        if iteration >= 20000:  # Have previous checkpoint to compare
-                            prev_checkpoint = f"data/blueprints/checkpoint_{iteration-10000}.pkl"
-                            if os.path.exists(prev_checkpoint):
-                                try:
-                                    from evaluation.metrics import PokerMetrics
-                                    from cfr.linear_cfr import LinearCFR
-                                    
-                                    # Load previous strategy
-                                    prev_cfr = LinearCFR(self.card_abstraction, self.action_abstraction)
-                                    prev_cfr.load_strategy(prev_checkpoint)
-                                    
-                                    # Compute Nash distance
-                                    nash_dist = PokerMetrics.nash_distance(self.cfr_solver, prev_cfr)
-                                    print(f"         Nash distance from prev: {nash_dist:.6f}")
-                                    
-                                    # Store in stats
-                                    if 'nash_distance' not in stats:
-                                        stats['nash_distance'] = []
-                                    stats['nash_distance'].append(nash_dist)
-                                    
-                                except Exception as e:
-                                    print(f"         Could not compute Nash distance: {e}")
-                    
-                    # Synchronize GPU operations for accurate timing
-                    if self.device_config.use_gpu:
-                        self.device_config.synchronize()
+                # Collect statistics every few batches
+                if batch_idx % max(1, 1000 // self.batch_size) == 0:
+                    self._collect_training_stats(iteration, utilities, stats)
+                
+                # Save checkpoint
+                if iteration % checkpoint_frequency == 0 and iteration > 0:
+                    checkpoint_path = f"data/blueprints/checkpoint_{iteration}.pkl"
+                    self.cfr_solver.save_strategy(checkpoint_path)
+                    print(f"Saved checkpoint at iteration {iteration}")
+                
+                # Memory cleanup for large batches
+                if batch_idx % 10 == 0 and hasattr(self.cfr_solver, 'batch_memory_cleanup'):
+                    self.cfr_solver.batch_memory_cleanup()
+        else:
+            # Standard single-iteration training
+            for iteration in tqdm(range(iterations), desc="Training"):
+                # Sample random game situation
+                num_players = random.randint(
+                    self.game_config['min_players'], 
+                    self.game_config['max_players']
+                )
+                
+                game_state = self.setup_game(num_players)
+                
+                # Run CFR iteration
+                utilities = self.cfr_solver.train_iteration(game_state)
+                
+                # Collect statistics
+                if iteration % 1000 == 0:
+                    self._collect_training_stats(iteration, utilities, stats)
+                
+                # Save checkpoint
+                if iteration % checkpoint_frequency == 0 and iteration > 0:
+                    checkpoint_path = f"data/blueprints/checkpoint_{iteration}.pkl"
+                    self.cfr_solver.save_strategy(checkpoint_path)
+                    print(f"Saved checkpoint at iteration {iteration}")
+    
+    def _collect_training_stats(self, iteration: int, utilities: Dict, stats: Dict):
+        """Collect and display training statistics"""
+        exploitability = self.cfr_solver.get_exploitability()
+        avg_utility = sum(utilities.values()) / len(utilities) if utilities else 0.0
+        
+        stats['iterations'].append(iteration)
+        stats['exploitability'].append(exploitability)
+        stats['total_infosets'].append(len(self.cfr_solver.infosets))
+        stats['avg_utility'].append(avg_utility)
+        
+        if iteration % 10000 == 0:
+            # Get memory info if using GPU
+            if self.device_config.use_gpu:
+                used_mem, total_mem = self.device_config.get_memory_info()
+                mem_usage = f"GPU Memory: {used_mem / 1e9:.1f}GB / {total_mem / 1e9:.1f}GB"
+                
+                # Additional memory stats for batch processing
+                if hasattr(self.cfr_solver, 'get_memory_usage_stats'):
+                    mem_stats = self.cfr_solver.get_memory_usage_stats()
+                    utilization = mem_stats.get('gpu_utilization', 0)
+                    mem_usage += f" ({utilization:.1f}% util)"
+            else:
+                mem_usage = "CPU Mode"
             
-            # Save checkpoint
-            if iteration % checkpoint_frequency == 0 and iteration > 0:
-                checkpoint_path = f"data/blueprints/checkpoint_{iteration}.pkl"
-                self.cfr_solver.save_strategy(checkpoint_path)
-                print(f"Saved checkpoint at iteration {iteration}")
+            print(f"Iteration {iteration}: "
+                  f"Exploitability={exploitability:.6f}, "
+                  f"InfoSets={len(self.cfr_solver.infosets)}, "
+                  f"AvgUtility={avg_utility:.2f}, "
+                  f"{mem_usage}")
+            
+            # Additional quality metrics
+            if iteration > 0:
+                # Strategy stability (Nash distance from previous checkpoint)
+                if iteration >= 20000:  # Have previous checkpoint to compare
+                    prev_checkpoint = f"data/blueprints/checkpoint_{iteration-10000}.pkl"
+                    if os.path.exists(prev_checkpoint):
+                        try:
+                            from evaluation.metrics import PokerMetrics
+                            from cfr.linear_cfr import LinearCFR
+                            
+                            # Load previous strategy
+                            prev_cfr = LinearCFR(self.card_abstraction, self.action_abstraction)
+                            prev_cfr.load_strategy(prev_checkpoint)
+                            
+                            # Compute Nash distance
+                            nash_dist = PokerMetrics.nash_distance(self.cfr_solver, prev_cfr)
+                            print(f"         Nash distance from prev: {nash_dist:.6f}")
+                            
+                            # Store in stats
+                            if 'nash_distance' not in stats:
+                                stats['nash_distance'] = []
+                            stats['nash_distance'].append(nash_dist)
+                            
+                        except Exception as e:
+                            print(f"         Could not compute Nash distance: {e}")
+            
+            # Synchronize GPU operations for accurate timing
+            if self.device_config.use_gpu:
+                self.device_config.synchronize()
         
         print("Blueprint training complete!")
         return stats
