@@ -14,6 +14,7 @@ from abstraction.card_abstraction import CardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
 from cfr.linear_cfr import LinearCFR
 from cfr.batch_mccfr import BatchMCCFR
+from cfr.simple_cfr import SimpleCFR
 from utils.device_config import setup_device
 
 
@@ -74,7 +75,8 @@ class BlueprintGenerator:
                 batch_size=batch_size
             )
         else:
-            self.cfr_solver = LinearCFR(
+            # Use SimpleCFR for reliable training without infinite loops
+            self.cfr_solver = SimpleCFR(
                 self.card_abstraction, 
                 self.action_abstraction,
                 device_config=self.device_config

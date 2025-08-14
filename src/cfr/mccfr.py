@@ -164,8 +164,9 @@ class MCCFR:
         )
         
         if not abstract_actions:
-            # No legal actions, advance game state
-            return self._mccfr_traverse(game_state, reach_probs, traversing_player, depth + 1)
+            # No legal actions - this should only happen if game is terminal
+            # Return neutral utilities to avoid infinite loops
+            return {i: 0.0 for i in range(game_state.num_players)}
         
         num_actions = len(abstract_actions)
         
