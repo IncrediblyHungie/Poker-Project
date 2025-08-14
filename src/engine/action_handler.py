@@ -4,7 +4,7 @@ Handles fold, check, call, raise, and all-in actions according to poker rules.
 """
 
 from typing import List, Tuple, Optional
-from .game_state import GameState, Action, Player
+from engine.game_state import GameState, Action, Player
 
 
 class ActionHandler:

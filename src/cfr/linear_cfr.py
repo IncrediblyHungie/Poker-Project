@@ -4,7 +4,7 @@ Recent iterations count more than earlier ones.
 """
 
 import numpy as np
-from .mccfr import MCCFR, InfoSet
+from cfr.mccfr import MCCFR, InfoSet
 from abstraction.card_abstraction import CardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
 
